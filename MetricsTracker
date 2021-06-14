@@ -1,0 +1,118 @@
+//MetricsTracker
+
+
+
+Option Explicit
+
+
+Private p_curr_month as String
+Private p_tracker_path as String
+Private p_tracker_wb_name as String
+Private p_tracker_wb as Workbook
+Private p_tracker_ws_name as String
+Private p_tracker_ws as Worksheet
+Private p_curr_row as Integer
+
+Public Property Get tracker_name()
+	tracker_name = p_tracker_wb_name
+End Property
+
+
+Private Sub Class_Initialize()
+
+	If Month(Date) = 1 Then
+		p_curr_month = "january"
+	ElseIf Month(Date) = 2 Then
+		p_curr_month = "february"
+	ElseIf Month(Date) = 3 Then
+		p_curr_month = "march"
+	ElseIf Month(Date) = 4 Then
+		p_curr_month = "april"
+	ElseIf Month(Date) = 5 Then
+		p_curr_month = "may"
+	ElseIf Month(Date) = 6 Then
+		p_curr_month = "june"
+	ElseIf Month(Date) = 7 Then
+		p_curr_month = "july"
+	ElseIf Month(Date) = 8 Then
+		p_curr_month = "august"
+	ElseIf Month(Date) = 9 Then
+		p_curr_month = "september"
+	ElseIf Month(Date) = 10 Then
+		p_curr_month = "october"
+	ElseIf Month(Date) = 11 Then
+		p_curr_month = "november"
+	ElseIf Month(Date) = 12 Then
+		p_curr_month = "december"
+	End If
+
+	p_tracker_path = "REDACTED"
+	p_tracker_wb_name = p_curr_month & "_2021_tracker.xlsx"
+	p_tracker_ws_name = "tracker"
+
+	If Not tracker_is_open() Then
+		Call open_tracker
+	Else
+		Set p_tracker_wb = Workbooks(p_tracker_wb_name)
+		Set p_tracker_ws = p_tracker_wb.Sheets(p_tracker_ws_name)
+	End If
+
+End Sub
+
+
+Private Function tracker_is_open()
+	Dim rtn as Boolean
+	rtn = False
+
+	Dim wb as Workbook
+	For Each wb in Application.Workbooks
+		If wb.Name = p_tracker_wb_name Then
+			rtn = True
+			Exit For
+		End If
+	Next
+
+	tracker_is_open = rtn
+End Function
+
+
+Private Sub open_tracker()
+	Set p_tracker_wb = Workbooks.Open(p_tracker_path & p_tracker_wb_name)
+	Set p_tracker_ws = p_tracker_wb.Sheets(p_tracker_ws_name)
+End Sub
+
+
+Private Function get_last_row()
+	Dim last_row as Double
+
+	If p_tracker_ws.FilterMode Then
+		last_row = 1
+		Do While p_tracker_ws.Cells(last_row, 1).Value2 <> ""
+			last_row = last_row + 1
+		Loop
+	Else
+		last_row = p_tracker_ws.range("B:B").End(xlDown).Row
+		If last_row = 1048576 Then
+			last_row = 1
+		End If
+		last_row = last_row + 1
+	End If
+
+	get_last_row = last_row
+End Function
+
+
+Public Sub enter_new_company(company_name as String, job_type as String, Optional is_approved as String = "False", Optional num_clients as Integer = 0)
+	p_curr_row = get_last_row()
+
+	With p_tracker_ws
+		.Cells(p_curr_row, 1).Value2 = Date
+		.Cells(p_curr_row, 2).Value2 = company_name
+		.Cells(p_curr_row, 3).Value2 = job_type
+		.Cells(p_curr_row, 4).Value2 = is_approved
+		.Cells(p_curr_row, 7).Value2 = num_clients
+	End With
+
+	p_tracker_wb.Save
+	
+End Sub

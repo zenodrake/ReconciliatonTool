@@ -1,0 +1,450 @@
+//ResultsForm
+
+
+Option Explicit
+
+Public trakcer as ClientTracker
+Public folio_tracker as FolioTrakcer
+Public helper as BenRecLookupHelper
+Public reg_helper as RegRecLookupHelper
+Public metrics_tracker as MetricsTracker
+Public rits_wb as Workbook
+Public job_type as String
+
+Private p_recon_wb_name as String
+Private p_find_range_text as String
+Private p_find_range as range
+Private p_ben_rec_save_path as string
+Private p_reg_rec_save_path as string
+
+Properyt Get recon_wb_name() as String
+	recon_wb_name = p_recon_wb_name
+End Property
+
+Private Sub ApproveButton_Click()
+
+	If tracker.num_clients = 0 Then
+		Exit Sub
+	End If
+
+	Dim client_idk as integer
+	client_idx = ClientNumberListBox.ListIndex
+	client_idx = Application.WorksheetFunction.Max(client_idx, 0)
+
+	Dim client as ClientRecord
+	Set client = tracker.get_client(client_idx)
+	client.approve_self
+	ClientNumberListBox.List(client_idx, 1) = "Approved"
+	tracker.increment_approved
+	client_idx = client_idx + 1
+
+	If client_idx >= tracker.num_clients Then
+		MsgBox "End of Client List", vbOkOnly, "Lookup Done"
+	Else
+		ClientNumberListBox.ListIndex = client_idx
+	End If
+	
+End Sub
+
+
+Private Sub ben_rec_auto()
+	Dim last_row as Integer
+	Dim client_rang as range
+	Dim total_range as range
+	Dim r as Integer
+	Dim client_cell as Variant
+	Dim omni_val as Variant
+	Dim pp_val as Variant
+	Dim diff_val as Variant
+	Dim cl as ClientRecord
+
+	last_row = helper.recon_ws.range("A:A").End(xlDown).Row
+
+	If rits_wb Is Nothing Then
+		WorkBookSelector.caption = "Select RITS File"
+		WorkBookSelector.Show
+	End If
+
+	If rits_wb is Nothing Then
+	Else
+		Set helper.rits_wb = rits_wb
+		CompanyNameLabel.caption = helper.get_company_name
+
+		For r = 2 to last_row
+			Set client_cell = helper.recon_ws.Cells(r, 6)
+			omni_val = client_cell.Offset(0, 1).Value2
+			pp_val = client_cell.Offset(0, 7).Value2
+			diff_val = client_cell.Offset(0, 8).Value2
+
+			If IsError(diff_val) Then
+				Exit For
+			End If
+
+			omni_val = Trim(omni_val)
+			pp_val = Trim(pp_val)
+			diff_val = Trim(diff_val)
+
+			If (omni_val = "" And pp_val = 0) Or (omni_val = "" And diff_val <> 0) Then
+				Set cl = New ClientRecord
+				Set cl.wb_source = Workbooks(Me.recon_wb_name)
+				cl.client_num = client_cell.Value2
+				cl.recon_row_num = client_cell.Row
+				cl.dtc_num = cl.ws_source.Cells(client_cell.Row, client_cell.Column - 1)
+				cl.recon_shares = cl.ws_source.Cells(client_cell.Row, helper.recon_share_col)
+				cl.max_votable = cl.ws_source.Cells(client_cell.Row, client_cell.Column + 5)
+				tracker.add_client cl
+
+				Call tracker.add_client_to_client_listbox(ClientNumberListBox, cl)
+			End If
+		Next
+
+		ClientNumberLabel.caption = "Client Number (" & tracker.num_clients & ")"
+
+		Call lookup_clients
+	End If
+
+End Sub
+
+
+Private Sub reg_rec_auto()
+	If rits_wb Is Nothing Then
+		WorkBookSelector.caption = "Choose Vote Matrix File"
+		WorkBookSelector.Show
+	End If
+
+	If rits_wb is Nothing Then
+	Else
+		Set reg_helper.rits_wb = rits_wb
+		Call reg_helper.reg_rec_lookup
+		CompanyNameLabel.caption = helper.get_company_name
+	End If
+
+End Sub
+
+
+Private Sub AutomatedRunButton_Click()
+	If job_type = "Folio" Then
+		Set folio_tracker = New FolioTracker
+		folio_tracker.set_defaults p_recon_wb_name
+		folio_tracker.check_companies
+
+		MsgBox "Done with Folio", vbOKOnly
+
+		Call metrics_tracker.entere_new_company("Multiple", job_type, Tru, folio_tracker.num_companies)
+		Set folio_tracker = Nothing
+		Exit Sub
+	End If
+
+	Call rits_wb_chooser
+
+	If rits_wb is Nothing Then
+		Exit Sub
+	Else
+		Call move_to_one_screen
+	End If
+
+	If job_type = "Ben Rec" or job_type = "Reallocation" Then
+		If AutomatedBenRecCheckBox.Value Then
+			Call helper.copy_from_omni_template(rits_wb)
+			Call helper.pullProxyPlus(False)
+		End If
+	ElseIf job_type = "Reg Rec" Then
+		Call reg_rec_auto
+	ElseIf job_type = "CDS" Then
+		MsgBox job_type & " Not Implemented", vbOKOnly
+	End If
+	
+End Sub
+
+
+Private Sub move_to_one_screen()
+	Dim i as Integer
+	i = 0
+	With GetObject("RIBM")
+		Do While .GetDisplayText(1, 2, 13) <> "CCV02M CCV02I"
+			.TransmitTerminalKey rcIBMPf1Key
+			.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+			i = i + 1
+			If i > 20 Then
+				Exit Sub
+			End If
+		Loop
+	End With
+End Sub
+
+
+Private Sub rits_wb_chooser()
+	Dim wb as Workbook
+	Dim i as Integer
+
+	i = 0
+	For Each wb in Application.Workbooks
+		If InStr(1, wb.Name, p_recon_wb_name) > 0 Then
+		ElseIf InStr(1, wb.Name, Me.metrics_tracker.tracker_name) > 0 Then
+		Else
+			Set rits_wb = wb
+			i = i + 1
+		End If
+	Next
+
+	If i > 1 Then
+		Set rits_wb = Nothing
+		Exit Sub
+	ElseIf i = 0 Then
+		Exit Sub
+	End If
+
+	If job_type = "Ben Rec" or job_type = "Reallocation" Then
+		If Instr(', UCase(rits_wb.Name), "OMNI") = 0 Then
+			Set rits_wb = Nothing
+		End IF
+	ElseIf job_type = "Reg Rec" Then
+		If InStr(1, UCase(rits_wb.Name), "MATRIX") = 0 Then
+			Set rits_wb = Nothing
+		End If
+	Else
+		Set rits_wb = Nothing
+	End If
+	
+End Sub
+
+
+Private Sub BenRecOption_Click()
+	job_type = "Ben Rec"
+	Me.SaveToNetworkButton.Enabled = True
+	helper.base_path = p_ben_rec_save_path
+	Set helper.recon_ws = helper.recon_wb.Sheets("1 Screen Extract")
+	helper.recon_ws.Activate
+End Sub
+
+
+Private Sub CDSOption_Click()
+	job_type = "CDS"
+	helper.base_path = p_ben_rec_save_path
+End Sub
+
+
+Private Sub ClientNumberListBox_Click()
+	If ResultsForm.ClientNumberListBox.ListIndex > tracker.num_clients Then
+	Else
+		tracker.client_index = ResultsForm.ClientNumberListBox.ListIndex
+	End If
+End Sub
+
+
+Private Sub DeclineButton_Click()
+	If tracker.num_clients = 0 Then
+		Exit Sub
+	End If
+
+	Dim client_idx as Integer
+	client_idx = ResultsForm.ClientNumberListBox.ListIndex
+	client_idx = Application.WorksheetFunction.Max(client_idx, 0)
+
+	Dim client as ClientRecord
+	Set client = tracker.get_client(client_idx)
+	client.decline_self
+	ClientNumberListBox.List(client_idx, 1) = "Declined"
+	tracker.increment_declined
+	StatusLabel.caption = "Status (" & tracker.num_declined & ")"
+
+	client_idx = client_idx + 1
+
+	If client_idx >= tracker.num_clients Then
+		MsgBox "End of Client List", vbOKOnly, "Lookup Done"
+	Else
+		ClientNumberListBox.ListIndex = client_idx
+	End If
+	
+End Sub
+
+
+Private Sub FolioOption_Click()
+	job_type = "Folio"
+	Me.SaveToNetworkButton.Enabled = False
+	Workbooks(p_recon_wb_name).Sheets("Folio Template").Activate
+End Sub
+
+
+Private Sub LookupButton_Click()
+	If tracker.num_clients = 0 Then
+		Exit Sub
+	Else
+		Dim client_idx as Integer
+		client_idx = ResultsForm.ClientNumberListBox.ListIndex
+		client_idx = Application.WorksheetFunction.Max(client_idx, 0)
+
+		Call lookup_client(cliend_idx)
+	End If
+End Sub
+
+
+Private Sub lookup_clients()
+	Call tracker.lookup_clients(ClientNumberListBox)
+	MsgBox "All Clients Checked", vbOKOnly, "Results"
+
+	Call tracker.display_mismatches(Me.ResultsListBox)
+
+	If tracker.num_declined > 0 Then
+		StatusLabel.caption = "Status (" & tracker.num_declined & ")"
+	End If
+End Sub
+
+
+Private Sub lookup_client(client_idx as Integer)
+	Call tracker.lookup_client(client_idx)
+	Call reset_results
+	Call tracker.display_result(Me.ResultsListBox, client_idx)
+
+	If client_idx >= tracker.num_clients Then
+	Else
+		ResultsForm.ClientNumberListBox.ListIndex = client_idx
+	End If
+End Sub
+
+
+Private Sub PullFromPPButton_Click()
+	If job_type = "Ben Rec" Then
+		Call helper.pullProxyPlus
+	ElseIf job_type = "Reg Rec" Then
+	ElseIf job_type = "Reallocation" Then
+		Call helper.pullProxyPlus
+	ElseIf job_type = "CDS" Then
+	End If
+End Sub
+
+
+Private Sub ReallocationOption_Click()
+	job_type = "Reallocation"
+	Me.SaveToNetworkButton.Enabled = True
+	helper.base_path = p_ben_rec_save_path
+	Set helper.recon_ws = helper.recon_wb.Sheets("1 Screen Extract")
+	helper.recon_ws.Activate
+End Sub
+
+
+Private Sub RegRecOption_Click()
+	job_type = "Reg Rec"
+	Me.SaveToNetworkButton.Enabled = True
+	helper.base_path = p_reg_rec_save_path
+	Set helper.recon_ws = helper.recon_wb.Sheets("Reg Rec Sheet")
+	helper.recon_ws.Activate
+End Sub
+
+
+Private Sub ResetButton_Click()
+	ResultsListBox.Clear
+	ClientNumberListBox.Clear
+	SavedStatusLabel.caption = "Not Saved"
+	CompanyNameLabel.caption = "No Company Selected"
+	ClientNumberLabel.caption = "No Clients"
+
+	tracker.clear_clients
+	helper.is_saved = False
+	StatusLabel.caption = "Status"
+
+	If TemplateResetCheckBox.Value Then
+		Call reset_template
+		If Not rits_wb is Nothing Then
+			rits_wb.Close SaveChanges:=False
+			Set rits_wb = Nothing
+		End If
+	End If
+End Sub
+
+
+Private Sub SaveToNetworkButton_Click()
+	Dim c_name as String
+	Dim tracker_approved as String
+	Dim num_clients_checked as Integer
+
+	If job_type = "Reallocation" Or job_type = "Ben Rec" Then
+		tracker_approved = tracker.are_all_clients_approved
+		num_clients_checked = tracker.num_clients
+	ElseIf job_type = "Reg Rec" Then
+		tracker_approved = reg_helper.recon_is_balanced
+		num_clients_checked = 0
+	End If
+
+	If job_type = "" Then
+		MsgBox "Please Choose A Recon Type", vbOKOnly
+		Exit Sbu
+	End If
+
+	Call helper.save_new_to_network(job_type)
+
+	If helper.is_saved Then
+		SavedStatusLabel.caption = "Saved as " & helper.get_new_wb_savepath
+		c_name = helper.get_company_name()
+
+		If job_type = "" Then
+			job_type = "Ben Rec"
+		End If
+
+		Call metrics_tracker.entere_new_company(c_name, job_type, tracker_approved, num_clients_checked)
+	End If
+
+	helper.is_saved
+End Sub
+
+
+Private Sub UserForm_Initialize()
+	Set tracker = New ClientTracker
+	Set helper = New BenRecLookupHelper
+	Set reg_helper = New RegRecLookupHelper
+	Set metrics_tracker = New MetricsTracker
+
+	p_recon_wb_name = "recon_helper"
+
+	Set helper.recon_wb = Workbooks(p_recon_wb_name)
+	Set reg_helper.recon_wb = Workbooks(p_recon_wb_name)
+
+	p_ben_rec_save_path = "REDACTED"
+	p_reg_rec_save_path = "REDACTED"
+
+	TemplateResetCheckBox.Value = True
+	AutomatedBenRecCheckBox.Value = True
+End Sub
+
+
+Private Sub reset_results()
+	ResultsForm.ResultsListBox.Clear
+End Sub
+
+
+Private Sub populate_client_listbox()
+
+	If InStr(p_find_range_tex, ":") = 0 Then
+		MsgBox "Please Select more than one cell", vbOKOnly
+	Else
+		Dim cl as ClientRecord
+		Dim cell_ as Variant
+
+		For Each cell_ in p_find_range.Cells
+			Set cl = New ClientRecord
+			Set cl.ws_source = cell_.Parent
+			cl.client_num = cell_.Value2
+			cl.recon_row_num = cell_.Row
+			cl.dtc_num = cl.ws_source.Cells(cell_.Row, cell_.Column - 1)
+			cl.recon_shares = cl.ws_source.Cells(cell_.Row, helper.recon_share_col)
+			cl.max_votable = cl.ws_source.Cells(cell_.Row, cell_.Column + 5)
+			tracker.add_client cl
+			Call tracker.add_client_to_client_listbox(ClientNumberListBox, cl)
+
+		Next
+	End If
+
+End Sub
+
+
+Private Sub reset_template()
+	If job_type = "Ben Ret" Then
+		Call helper.reset_template
+	ElseIf job_type = "Reallocation" Then
+		Call helper.reset_template
+	ElseIf job_type = "Reg Rec" Then
+		Call reg_helper.reset_template
+	ElseIf job_type = "CDS" Then
+	End If
+
+End Sub

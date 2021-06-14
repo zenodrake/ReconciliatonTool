@@ -1,0 +1,406 @@
+//RegRecLookupHelper
+
+
+Option Explicit
+
+
+Private p_recon_wb as Workbook
+Private p_recon_ws as Worksheet
+Private p_recon_wb_path as String
+Private p_recon_wb_name as String
+Private p_recon_ws_name as String
+Private p_rits_wb as Workbook
+Private p_rits_ws as Worksheet
+Private p_rits_ws_name as String
+Private p_recon_share_col as Integer
+Private p_proceed_with_save as Boolean
+Private p_new_workbook as Workbook
+Private p_new_workbook_save_path as String
+Private p_base_path as String
+Private p_max_search_row as Integer
+
+
+Property Get base_path() as String
+	base_path = p_base_path
+End Property
+
+Public Property Get Session() as Object
+	Set Session = GetObject("RIBM")
+End Property
+
+Property Set rits_wb(wb as Workbook)
+	Set p_rits_wb = wb
+	Set p_rits_ws = wb.Sheets(p_rits_ws_name)
+End Property
+
+Property Get recon_wb() as Workbook
+	Set recon_wb = p_recon_wb
+End Property
+
+Property Set recon_wb(wb as Workbook)
+	Set p_recon_wb = wb
+	p_recon_wb_name = wb.Name
+	Set p_recon_ws_name = p_recon_wb.Sheets(p_recon_ws_name)
+End Property
+
+Property Get recon_ws_name() as String
+	recon_ws_name = p_recon_ws.Name
+End Property
+
+
+
+Public Function recon_is_balanced() as Boolean
+	Dim total_shares as Double
+	Dim variance as Double
+	Dim rtn as Boolean
+
+	total_shares = p_recon_w.Cells(2, 5).Value
+	variance = p_recon_ws.Cells(2, 7).Value2
+
+	If Abs(((total_shares - variance) - total_shares) / total_shares) < 0.00001 Then
+		rtn = True
+	Else
+		rtn = False
+	End If
+
+	recon_is_balanced = rtn
+End Function
+
+
+Public Sub reg_rec_lookup()
+
+	Dim start_row as Integer
+	Dim end_row as Integer
+	Dim cusip as String
+	Dim beneficial_row as Integer
+	Dim registered_row as Integer
+	Dim job_num as String
+	Dim job_num_col as Integer
+	Dim file_name as String
+	Dim class_num as String
+	Dim prev_class_num as String
+	Dim prev_job_num as String
+	Dim class_ending as String
+	Dim screen_102_shares as Double
+	Dim non_votable as Double
+	Dim calc_ratio as Double
+
+	Dim i as Integer
+	Dim total_outstanding_shares as Double
+	Dim total_dtc_shares as Double
+	Dim max_votable as Double
+	Dim reg_rec_sheet_row as Integer
+
+	Dim shares_ratio_col as Integer
+	Dim votes_ratio_col as Integer
+	Dim shares_ratio as Double
+	Dim votes_ratio as Double
+	Dim nps_total as Double
+
+	reg_rec_sheet_row = 2
+	job_num_col = 4
+	beneficial_row = 0
+	registered_row = 0
+	job_num = "nun"
+	prev_class_num = "none"
+	prev_job_num = "none"
+	shares_ratio_col = 45
+	votes_ratio_col = 47
+
+	With p_rits_ws
+		cusip = .Cells(3, 5).Value2
+		start_row = 10
+		end_row = 60
+
+		For i = start_row to end_row
+			If .Cells(i, 1).Value2 = "Beneficial" Then
+				beneficial_row = i + 2
+			End If
+
+			If .Cells(i, 1).Value2 = "Registered" Then
+				registered_row = i + 3
+				Exit For
+			End If
+		Next
+
+		class_ending = " Ben"
+		non_votable = 0
+		total_outstanding_shares = 0
+		total_dtc_shares = 0
+
+		For i = beneficial_row to registered_row
+			If .Cells(i, 1).Value2 = "" Then
+				Exit For
+			End If
+
+			class_num = .Cells(i, 1).Value2
+			job_num = .Cells(i, job_num_col).Value2
+			non_votable = non_votable + .Cells(i, 24).Value2
+
+			If prev_job_num <> job_num Then
+				total_outstanding_shares = total_outstanding_shares + get_total_outstanding_shares(job_num, cusip & class_num)
+			Else
+				total_outstanding_shares = get_total_outstanding_shares(job_num, cusip & class_num)
+			End If
+
+			'If prev_class_num <> class_num Then
+			'	total_outstanding_shares = total_outstanding_shares + get_total_outstanding_shares(job_num, cusip & class_num)
+			'Else
+			'	total_outstanding_shares = get_total_outstanding_shares(job_num, cusip & class_num)
+			'End If
+
+			total_dtc_shares = get_total_dtc_shares(job_num, cusip & class_num)
+			p_recon_ws.Cells(reg_rec_sheet_row, 1).Value2 = class_num & class_ending
+			p_recon_ws.Cells(reg_rec_sheet_row, 2).Value2 = total_dtc_shares
+
+			prev_job_num = job_num
+			prev_class_num = class_num
+			reg_rec_sheet_row = reg_rec_sheet_row + 1
+		Next
+
+		p_recon_ws.Cells(2, 5).Value2 = total_outstanding_shares
+		p_recon_ws.Cells(3, 5).Value2 = non_votable
+
+		For i = registered_row to registered_row + 30
+			If .Cells(i, 1).Value2 = "" Then
+				Exit For
+			End If
+
+			file_name = .Cells(i, 17).Value2
+			job_num = .Cells(i, job_num_col).Value2
+			class_num = .Cells(i, 1).Value2
+			shares_ratio = .Cells(i, shares_ratio_col).Value2
+			votes_ratio = .Cells(i, votes_ratio_col).Value2
+			calc_ratio = ratio_to_use(shares_ratio, votes_ratio)
+			screen_102_shares = .Cells(i, 38).Value2
+			max_votable = select_max_votable(job_num, cusip & class_num, screen_102_shares)
+
+			If InStr(1, file_name, "LZ9") > 0 Or InStr(1, job_num, "LZ9") > 0 Then
+				class_ending = "LZ9"
+			ElseIf VBA.Strings.UCase(VBA.Strings.Left(job_num, 1)) <> "P" Then
+				class_ending = " " & job_num
+			Else
+				class_ending = " Reg"
+			End If
+		Next
+
+		For i = registered_row to 100
+			If .Cells(i, 4).Value2 = "NPS Total Outstanding" Then
+				nps_total = .Cells(i + 1, 4).Value2
+				p_recon_ws.Cells(2, 8).FormulaLocal = "=E2-" & nps_total
+				Exit For
+			End If
+		Next
+
+	End With
+	
+	MsgBox "Done with Registered Reconciliation", vbOKOnly
+End Sub
+
+
+Private Function pct_diff(num_one as Double, num_two as Double)
+	pct_diff = (num_two - num_one) / num_one
+End Function
+
+
+Private Function ratio_to_use(shares_ratio as Double, votes_ratio as Double)
+	If shares_ratio = 0 Or votes_ratio = 0 Then
+		ratio_to_use = 1
+	ElseIf shares_ratio <> 1 And votes_ratio = 1 And shares_ratio > 0 Then
+		ratio_to_use = 1 / shares_ratio
+	ElseIf shares_ratio = 1 And votes_ratio <> 1 And votes_ratio > 0 Then
+		ratio_to_use = votes_ratio
+	Else
+		ratio_to_use = 1
+	End If
+End Function
+
+
+Private Function select_max_votable(job_num as String, cusip as String, dtc_from_matrix as Double)
+
+	Dim a as Integer
+	Dim pp_line as String
+	Dim rtn as Double
+
+	With Session
+		.MoveCursor 4, 9
+		.TransmitANSI job_num
+
+		.MoveCursor 4, 24
+		.TransmitANSI cusip
+	
+		.MoveCursor 7, 11
+		.TransmitANSI "    "
+
+		.MoveCursor 7, 28
+		.TransmitANSI "    "
+		.TransmitTerminalKey rcIBMEnterKey
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		a = 11
+		Do While a < 22
+			pp_line = .GetDisplayTex(a, 16, 13)
+			pp_line = Trim(pp_line)
+
+			If pp_line <> "0" And pp_line <> "" Then
+				If Abs(pct_diff(CDble(pp_line), dtc_from_matrix)) <= 0.01 Then
+					rtn = .GetDisplayText(a, 43, 14)
+					Exit Do
+				End If
+			End If
+
+			a = a + 1
+		Loop
+		
+	End With
+
+	select_max_votable = rtn
+
+End Function
+
+
+Private Sub Class_Initialize()
+	p_rits_ws_name = "Vote Matrix"
+	p_recon_ws_name = "Reg Rec Sheet"
+End Sub
+
+
+Private Function get_total_outstanding_shares(job_num as String, cusip as String)
+	Dim total_outstanding as Double
+
+	With Session
+		.MoveCursor 4, 9
+		.TransmitANSI job_num
+
+		.MoveCursor 4, 24
+		.TransmitANSI cusip
+	
+		.MoveCursor 7, 11
+		.TransmitANSI "    "
+
+		.MoveCursor 7, 28
+		.TransmitANSI "    "
+		.TransmitTerminalKey rcIBMEnterKey
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		total_outstanding =.GetDisplayText(5, 42, 25)
+		
+	End With
+
+	get_total_outstanding = total_outstanding
+	
+End Function
+
+
+Private Function get_total_dtc_shares(job_num as String, cusip as String)
+	Dim total_dtc as Double
+
+	With Session
+		.MoveCursor 4, 9
+		.TransmitANSI job_num
+
+		.MoveCursor 4, 24
+		.TransmitANSI cusip
+	
+		.MoveCursor 7, 11
+		.TransmitANSI "    "
+
+		.MoveCursor 7, 28
+		.TransmitANSI "    "
+		.TransmitTerminalKey rcIBMEnterKey
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		total_dtc =.GetDisplayText(5, 12, 20)
+		
+	End With
+
+	get_total_dtc_shares = total_dtc
+	
+End Function
+
+
+Public Sub reset_template()
+	Dim last_row as Integer
+	
+	With p_recon_ws
+		last_row = 42
+		
+		.range("A2:E" & last_row).ClearContents
+		.range("A2:E" & last_row).ClearFormats
+		.range("H2").ClearContents
+
+
+		last_row = 14
+		With .range("C2:C" & last_row)
+			.Value2 = 1
+			.NumberFormat = "0.0000"
+			.HorizontalAlignment = xlCenter
+		End With
+
+		With .range("D2:D" & last_row)
+			.Formula2R1C1 = "=RC[-2]*RC[-1]"
+			.HorizontalAlignment = xlCenter
+		End With
+
+		With .Cells(last_row, 4).Borders(xlEdgeBottom)
+			.LineStyle = xlContinuous
+			.ColorIndex = 0
+			.TintAndShade = 0
+			.Weight = xlThin			
+		End With
+
+		.Cells(last_row + 1, 2).FormulaLocal = "=sum(B2:B" &  (last_row) & ")"
+		.Cells(last_row + 1, 4).FormulaLocal = "=sum(D2:D" &  (last_row) & ")"
+		.Cells(last_row + 1, 5).FormulaLocal = "=sum(E2:E" &  (last_row) & ")"
+
+		With .Cells(last_row + 3, 4)
+			.FormulaLocal = "=D" & (last_row + 1) & "-E" & (last_row + 1)
+			.NumberFormat = "_(* #,##0_);_(* (#,##0);_(* ""-""??_);_(@_)"
+			.Interior.Pattern = xlSolid
+			.Interior.PatternColorIndex = xlAutomatic
+			.Interior.color = 10092543
+			.Interior.TintAndShade = 0
+			.Interior.PatternTintAndShade = 0
+			.Font.color = -16776961
+			.Font.TintAndShade = 0
+		End With
+
+		.Cells(last_row + 3, 5).Value2 = "diff"
+		.Cells(2, 7).FormulaLocal = "=D" & (last_row + 3)		
+
+	End With
+	
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

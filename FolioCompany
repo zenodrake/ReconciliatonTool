@@ -1,0 +1,459 @@
+//Folio Company
+
+Option Explicit
+
+Private p_company_name as String
+Private p_file_type as String
+Private p_job_num as String
+Private p_cusip as String
+Private p_nzz as String
+Private p_nzz_line as String
+Private p_pp_vote_records(60) as FolioVoteInfo
+Private p_pp_vote_record_idx as Integer
+Private p_folio_vote_records(60) as FolioVoteInfo
+Private p_vote_record_statuses(60) as String
+Private p_folio_vote_record_idx as Integer
+Private p_voted_shares as Double
+Private p_folio_file_path as String
+Private p_status as String
+
+Public meet_date as String
+
+Public Property Get folio_file_path() as String
+	folio_file_path = p_folio_file_path
+End Property
+
+Public Property Let folio_file_path(val as String)
+	p_folio_file_path = val
+End Property
+
+Public Property Get status() as String
+	status = p_status
+End Property
+
+Public Property Let status(val as String)
+	p_status = val
+End Property
+
+Public Property Get Session() as Object
+	Set Session = GetObject("RIBM")
+End Property
+
+Public Property Get company_name() as String
+	company_name = p_company_name
+End Property
+
+Public Property Let company_name(val as String)
+	p_company_nam = val
+End Property
+
+Public Property Let file_type(val as String)
+	p_file_type = val
+End Property
+
+Public Property Let job_num(val as String)
+	p_job_num = val
+End Property
+
+Public Property Let cusip(val as String)
+	p_cusip = val
+End Property
+
+Public Property Let nzz(val as String)
+	p_nzz = val
+	p_nzz_line = "I01-NZZ-" & val
+End Property
+
+Public Property Let voted_shares(val as Double)
+	p_voted_shares = val
+End Property
+
+
+Public Sub add_pp_vote_record(vote_record as FolioVoteInfo)
+	Set p_pp_vote_records(p_pp_vote_record_idx) = vote_record
+	p_pp_vote_record_idx = p_pp_vote_record_idx + 1
+End Sub
+
+
+Public Sub add_folio_vote_record(vote_record as FolioVoteInfo)
+	Set p_folio_vote_records(p_folio_vote_record_idx) = vote_record
+	p_folio_vote_record_idx = p_folio_vote_record_idx + 1
+End Sub
+
+
+Public Sub Class_Initialize()
+	p_pp_vote_record_idx = 0
+	p_folio_vote_record_idx = 0
+End Sub
+
+
+Public Sub move_to_one_screen()
+	Dim i as Integer
+	i = 0
+	With Session
+		Do While .GetDisplayTex(1, 2, 13) <> "CCV02M CCV02I"
+			.TransmitTerminalKey rcIBMPf1Key
+			.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+			i = i + 1
+			If i > 20 Then
+				Exit Sub
+			End If
+		Loop
+	End With
+End Sub
+
+
+Public Sub set_info(comp_name as String, shares as Double, file_type as String, job_num as String, cusip as String, nzz as String)
+	p_company_name = comp_name
+	p_voted_shares = shares
+	p_file_type = file_type
+	p_job_num = job_num
+	p_cusip = format_cusip(cusip)
+	p_nzz = nzz
+	p_nzz_line = "I01-NZZ" & nzz
+End Sub
+
+
+Private Function format_cusip(cusip as String)
+	Do While Len(cusip) < 9
+		cusip = "0" & cusip
+	Loop
+	format_cusip = cusip
+End Function
+
+
+Public Sub move_to_vote_screen()
+	Dim nzz_line_num as Integer
+
+	With Session
+		.MoveCursor 4, 9
+		.TransmitANSI p_job_num
+
+		.MoveCursor 4, 24
+		.TransmitANSI p_cusip
+
+		.MoveCursor 7, 11
+		.TransmitANSI "    "
+
+		.MoveCursor 7, 28
+		.TransmitANSI "    "
+
+		.TransmitTerminalKey rcIBMEnterKey
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+		
+
+		nzz_line_num = calculate_nzz_line_num()
+
+		.MoveCursor nzz_line_num, 2
+		.TransmitTerminalKey rcIBMEnterKey
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+		.MoveCursor 19, 36
+		.TransmitANSI 2
+		.TransmitTerminalKey rcIBMEnterKey
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+	End With	
+End Sub
+
+
+Public Sub get_vote_records_from_pp()
+
+	Me.move_to_one_screen
+	Me.move_to_vote_screen
+
+	Dim idk as String
+	Dim vote_info as FolioVoteInfo
+	Dim r as Integer
+
+	With Session
+		Do While .GetDisplayText(23, 2, 14) <> "AT LAST RECORD"
+			For r = 10 to 19
+				If Trim(.GetDisplayText(r, 15, 17)) = "" Then
+					Exit For
+				End If
+
+				If Trim(.GetDisplaytext(r, 31, 17)) = "" Then
+					get_votes_from_sub_screen
+				Else
+					Set vote_info = New FolioVoteInfo
+					vote_info.prop_number = Trim(.GetDisplaytext(r, 31, 17))
+					vote_info.for_votes = .GetDisplaytext(r, 15, 17)
+					vote_info.against_votes = .GetDisplaytext(r, 31, 17)
+					vote_info.abstain_votes = .GetDisplaytext(r, 54, 17)
+
+					Me.add_pp_vote_record vote_info
+					
+				End If
+			Next r
+
+			.TransmitTerminalKey rcIBMPf2Key
+			.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+		
+		Loop
+	End With
+End Sub
+
+
+Public Sub get_vote_records_from_folio()
+	Dim wrd as Object
+	Dim obj_paragraph as Variant
+	Dim doc as Variat
+	Dim line_text as String
+	Dim doc_string as string
+	Dim proposal_reg as RegExp
+	Dim prop_matches as Variant
+
+	Dim vote_reg as RegExp
+	Dim vote_matches as Variant
+
+	Dim vote_record as FolioVoteInfo
+	Dim proposal_num as Integer
+	Dim for_votes as Double
+	Dim against_votes as Double
+	Dim abstain_votes as Double
+	Dim i, inc, k as Integer
+	Dim abc, idk as String
+	Dim two_vot_sub as Boolean
+	Dim prop_start_idx as Integer
+	Dim prop_end_idx as Integer
+
+	Dim curr_prop as Variant
+	Dim curr_prop_idx as Integer
+	Dim curr_sub_props as Variant
+	Dim curr_sub_prop as String
+
+	Set proposal_reg = New RegExp
+	proposal_reg.Global = True
+	proposal_reg.Pattern = "\d+[a-z]*[A-Z]*\.\ "
+
+	Set vote_record = New FolioVoteRecord
+	Set wrd = CreateObject("Word.Application")
+	Set doc = wrd.Documents.Open(p_folio_file_path)
+
+	'wrd.Visible = True
+	proposal_num = 0
+
+	For each obj_paragraph in doc.Paragraphs
+		line_text = Trim(obj_paragraph.range.Text)
+		doc_string = doc_string & line_text
+	Next
+
+	Set prop_matches = proposal_reg.Execute(doc_string)
+
+	curr_prop_idx = 0
+	Do While curr_prop_idx < prop_matches.count
+		prop_start_idx = prop_matches(curr_prop_idx).FirstIndex
+		If curr_prop_idx >= prop_matches.Count - 1 Then
+			prop_end_idx = Len(doc_string)
+		Else
+			prop_end_idx = prop_matches(curr_prop_idx + 1).FirstIndex
+		End If
+
+		curr_prop = Mid(doc_string, prop_start_idx + 1, prop_end_idx - prop_start_idx)
+		curr_sub_props = VBA.Strings.Split(curr_prop, Chr(13))
+
+		Set vote_reg = New RegExp
+		vote_reg.Pattern = "\d+\ .*\("
+		vote_reg.Global = True
+
+		Set vote_matches = vote_reg.Execute(curr_prop)
+
+		If vote_matches.count < 1 Then
+			GoTo invalid_prop_identified
+		End If
+
+		i = 1
+		curr_sub_prop = curr_sub_props(i)
+		Do While Not vote_reg.Test(curr_sub_prop)
+			i = i + 1
+			curr_sub_prop = curr_sub_prop(i)
+		Loop
+
+		abc = curr_sub_props(i)
+		idk = curr_sub_props(i + 2)
+
+		abc = VBA.Strings.Right(abc, 5)
+		If Len(idk) > 0 Then
+			idk = VBA.Strings.Right(idk, 5)
+		Else
+			idk = abc
+		End If
+
+		If abc = idk Thne
+			incr = 2
+			two_vote_sub = True
+		Else
+			incr = 3
+			two_vote_sub = False
+		End If
+
+		k = 1
+		Do While i < Ubound(curr_sub_props) - 2
+			Set vote_record = New FolioVoteRecord
+			for_votes = Trim(VBA.Strings.Left(curr_sub_props(i), InStr(1, curr_sub_props(i), " ")))
+
+			If two_vote_sub Then
+				against_votes = 0
+				abstain_votes = Trim(VBA.Strings.Left(curr_sub_props(i + 1), InStr(1, curr_sub_props(i + 1), " ")))
+			Else
+				against_votes = Trim(VBA.Strings.Left(curr_sub_props(i + 1), InStr(1, curr_sub_props(i + 1), " ")))
+				abstain_votes = Trim(VBA.Strings.Left(curr_sub_props(i + 2), InStr(1, curr_sub_props(i + 2), " ")))
+			End If
+
+			vote_record.for_votes = for_votes
+			vote_record.against_votes = against_votes
+			vote_record.abstain_votes = abstain_votes
+
+			If UBound(curr_sub_props) > 7 Then
+				vote_record.prop_number = curr_prop_idx + 1 & Chr(k + 64)
+			Else
+				vote_record.prop_number = curr_prop_idx + 1
+			End IF
+
+			Me.add_folio_vote_record vote_record
+			i = i + inc
+			k = k + 1
+		Loop
+invalid_prop_identified:
+		curr_prop_idx = curr_prop_idx + 1
+	Loop
+
+	wrd.Quit
+	
+End Sub
+
+
+Sub get_votes_from_main_screen(Optional start_row as Integer = 10)
+	Dim vote_info as FolioVoteInfo
+	Dim r as Integer
+
+	With Session
+		Do While .GetDisplayText(23, 2, 14) <> "AT LAST RECORD"
+			For r = start_row to 19
+				Set vote_info = New FolioVoteInfo
+
+				If Trim(.GetDisplayText(r, 15, 17)) = "" Thne
+					Exit For
+				End If
+
+				vote_info.prop_number = Trim(.GetDisplayText(r, 8, 4))
+				vote_info.for_votes = .GetDisplayText(r, 15, 17)
+				vote_info.against_votes = .GetDisplayText(r, 31, 17)
+				vote_info.abstain_votes = .GetDisplayText(r, 54, 17)
+			Next r
+
+			.TransmitTerminalKey rcIBMPf2Key
+			.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+		Loop
+	End With
+	
+End Sub
+
+
+Sub get_votes_from_sub_screen()
+	Dim r as Integer
+	Dim vote_info as FolioVoteInfo
+	Dim for_votes as Double
+	Dim against_votes as Double
+	Dim abstain_votes as Double
+
+	With Session
+		.MoveCursor 10, 21
+		.TransmitTerminalKey rcIBMPf5Key
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		Do While .GetDisplayText(23, 2, 14) <> "AT LAST RECORD"
+			For r = 11 to 21
+				Set vote_info = New FolioVoteInfo
+
+				If Trim(.GetDisplayText(r, 37, 27)) = "" Thne
+					Exit For
+				End If
+
+				against_votes = 0
+				abstain_votes = Trim(.GetDisplayText(r, 37, 27))
+				for_votes = p_voted_shares - abstain_votes
+
+				vote_info.prop_number = Trim(.GetDisplayText(r, 1, 3))
+				vote_info.for_votes = for_votes
+				vote_info.against_votes = against_votes
+				vote_info.abstain_votes = abstain_votes
+
+				Me.add_pp_vote_record vote_info
+			Next r
+
+			.TransmitTerminalKey rcIBMPf2Key
+			.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+		Loop
+
+		.TransmitTerminalKey rcIBMPf2Key
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+	End With
+
+End Sub
+
+
+Private Function calculate_nzz_line_num()
+	Dim r as Integer
+	Dim idk as String
+
+	r = 11
+
+	With Session
+		idk = .GetDisplayText(r, 3, 11)
+		Do While idk <> p_nzz_line
+			r = r + 1
+			idk = .GetDisplayText(r, 3, 11)
+		Loop
+	End With
+
+	calculate_nzz_line_num
+	
+End Function
+
+
+Public Sub compare_vote_records()
+
+	Dim i as Integer
+	Dim fv as FolioVoteInfo
+	Dim pp as FolioVoteInfo
+	Dim idk as String
+
+	If p_folio_vote_record_idx <> p_pp_vote_record_idx Then
+		p_status = "Number of Votes between PP and Folio not equal"
+		Exit Sub
+	End If
+
+	For i = 0 to p_folio_vote_record_idx - 1
+		Set fv = p_folio_vote_records(i)
+		Set pp = p_pp_vote_records(i)
+
+		If fv.for_votes = pp.for_votes And fv.abstain_votes = pp.abstain_votes And fv.against_votes = pp.against_votes Then
+			idk = ""
+		ElseIf fv.for_votes <> pp.for_votes Then
+			idk = "For votes mismatch on proposition " & fv.prop_number & ". Folio file: " & fv.for_votes
+			idk = idk & "; PP: " & pp.for_votes & ". "
+		ElseIf
+			idk = "Abstain votes mismatch on proposition " & fv.prop_number & ". Folio file: " & fv.abstain_votes
+			idk = idk & "; PP: " & pp.abstain_votes & ". "
+		ElseIf
+			idk = "Against votes mismatch on proposition " & fv.prop_number & ". Folio file: " & fv.against_votes
+			idk = idk & "; PP: " & pp.against_votes & ". "
+		End If
+
+		p_vote_record_statuses(i) = idk
+		
+	Next
+
+	idk = ""
+	For i = 0 to p_folio_vote_record_idk - 1
+		idk = idk & p_vote_record_statuses(i)
+	Next
+
+	If Len(idk) = 0 Then
+		p_status = "Approved"
+	Else
+		p_status = idk
+	End If
+
+End Sub

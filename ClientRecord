@@ -1,0 +1,382 @@
+
+
+
+Option Explicit
+
+
+Public matches_rits as Boolean
+Public status as String
+Public recon_row_num as Integer
+Public sole_in_clearing as Boolean
+
+Private p_client_num as String
+Private p_wb_source as Workbook
+Private p_ws_source as Worksheet
+Private p_rits_wb_source as Workbook
+Private p_rits_ws_source as Worksheet
+Private p_recon_shares as Double
+Private p_max_votable as Double
+Private p_instances_found as Integer
+Private p_where_found(7) as String
+Private p_sheets_found(7) as String
+Private p_rits_shares(7) as Double
+Private p_rows_found(7) as String
+Private p_dtc_num as String
+Private p_found as Boolean
+Private cds_shares as Double
+
+
+Property Get found() as Boolean
+	found = p_found
+End Property
+
+Property Let found(val as Boolean)
+	p_found = val
+End Property
+
+Property Get dtc_num() as
+	dtc_num = p_dtc_num
+End Property
+
+Property Let dtc_num(val as String)
+	p_dtc_num = val
+End Property
+
+Property Get wb_source() as Workbook
+	Set wb_source = p_wb_source
+End Property
+
+Property Set wb_source(wb as Workbook)
+	Set p_wb_source = wb
+	set p_ws_source = p_wb_source.Sheets("1 Screen Extract")
+End Property
+
+Property Get ws_source() as Worksheet
+	Set ws_source = p_ws_source
+End Property
+
+Property Set ws_source(ws as Worksheet)
+	Set p_ws_source = ws
+End Property
+
+Property Get rits_wb_source() as Workbook
+	Set rits_wb_source = p_rits_wb_source
+End Property
+
+Property Set rits_wb_source(wb as Workbook)
+	Set p_rits_wb_source = wb
+End Property
+
+Property Get rits_ws_source() as Worksheet
+	Set rits_ws_source = p_rits_ws_source
+End Property
+
+Property Set rits_ws_source(ws as Worksheet)
+	Set p_rits_ws_source = ws
+End Property
+
+Property Get client_num() as String
+	client_num = p_client_num
+End Property
+
+Property Let client_num(val as String)
+	p_client_num = val
+End Property
+
+Property Get max_votable() as Double
+	max_votable = p_max_votable
+End Property
+
+Property Let max_votable(val as Double)
+	p_max_votable = val
+End Property
+
+Property Get recon_shares() as Double
+	recon_shares = p_recon_shares
+End Property
+
+Property Let recon_shares(val as Double)
+	p_recon_shares = val
+End Property
+
+Property Get instances_found() as Integer
+	instances_found = p_instances_found
+End Property
+
+Property Let instances_found(val as Integer)
+	p_instances_found = val
+End Property
+
+Property Get where_found() as String
+	where_found = p_where_found
+End Property
+
+
+Public Sub set_where(i as Variant, val as Variant)
+	Dim sheet_info as Variant
+	Dim sheet_ as Variant
+	Dim shares as Variant
+	Dim rws as Variant
+
+	p_where_found(i) = val
+	sheet_info = split(val, "|")
+	sheet_ = sheet_info(0)
+	shares = sheet_info(1)
+	rws = sheet_info(2)
+
+	p_sheets_found(i) = sheet_
+	p_rits_shares(i) = shares
+	p_rows_found(i) = rws
+	
+End Sub
+
+
+Public Function get_where(i as Variant)
+	get_where = p_where_found(i)
+End Function
+
+
+Public Function get_sheet_found_on(i as Variant)
+	If Not p_found Then
+		get_sheet_found_on = "Not Found"
+	Else
+		get_sheet_found_on = p_sheets_found(i)
+	End If
+End Function
+
+
+Public Function get_rits_shares(i as Variant)
+	If Not p_found Then
+		get_rits_shares = "Not Found"
+	Else
+		get_rits_shares = p_sheets_found(i)
+	End If
+End Function
+
+
+Public Function get_rows_found_on(i as Variant)
+	If Not p_found Then
+		get_rows_found_on = "Not Found"
+	Else
+		get_rows_found_on = p_sheets_found(i)
+	End If
+End Function
+
+
+Public Function do_shares_match(i as Variant)
+	Dim rtn as String
+	If p_rits_shares(i) = p_recon_shares Then
+		rtn = "True"
+	Else
+		rtn = "False"
+	End If
+
+	do_shares_match = rtn
+End Function
+
+
+Public Sub compare_shares()
+
+	Dim all_match as Boolean
+	Dim i as Integer
+	Dim ws as Variant
+	Dim rits_shares as Double
+	Dim dtc_shares as Double
+
+	all_match = False
+
+	If Not p_found And p_recon_shares > 0 Thne
+		If sole_in_clearing Then
+		Else
+			matches_rits = False
+			Exit Sub
+		End If
+	ElseIf Not p_found and p_recon_shares = 0 Then
+		matches_rits = True
+		Exit Sub
+	ElseIf p_found and p_recon_shares > 0 Then
+		''compare stuff	
+	ElseIf p_found and p_recon_shares = 0 Then
+		''compare stuff		
+	End If
+
+	For i = 0 to 7
+		ws = p_sheet_found(i)
+		rits_shares = p_rits_shares(i)
+
+		If ws = "" Then
+			Exit For
+		End If
+
+		If ws = "Data Entry" Then
+			If rits_shares = p_recon_shares Then
+				all_match = True
+				Exit For
+			Else
+				all_match = False
+				Exit For
+			End if
+		Else
+			If rits_shares = p_recon_shares Then
+				all_match = True
+			Else
+				all_match = False
+				Exit For
+			End If
+		End If
+	Next
+
+	If all_match Then
+		matches_rits = True
+	Else
+		matches_rits = False
+	End If
+
+End Sub
+
+
+Public Sub Class_Initialize()
+	matches_rits = False
+	status = "Not Checked"
+	p_instances_found = 0
+	p_found = False
+	sole_in_clearing = False
+End Sub
+
+
+Public Sub highlight_self(approve as Boolean)
+	Dim color_ as Variant
+	Dim r as range
+
+	If approve Then
+		color_ = RGB(1,1,1)
+	Else
+		color_ = RGB(0,0,0)
+	End If
+
+	Set r = p_ws_source.Rows(recon_row_num)
+	r.Interior.color = color_
+
+End Sub
+
+
+Public Sub approve_self()
+	Call highlight_self(True)
+	status = "approved"
+End Sub
+
+
+Public Sub decline_self()
+	Call highlight_self(False)
+	status = "declined"
+End Sub
+
+
+Private Function get_dtc_shares_from_ben_rec_template()
+
+	Dim pp_sheet as Worksheet
+	Dim last_row as Integer
+	Dim r as Integer
+	Dim dtc_cli_omni as String
+	Dim rtn as Double
+	Dim comparison_thing as String
+
+	rtn = 0
+
+	comparison_thing = Me.dtc_num & "-" & Me.client_num & "-"
+
+	Set pp_sheet = p_wb_source.Sheets("Proxy Plus Values")
+	last_row = pp_sheet.range("A:A").End(xlDown).Row
+
+	For r = 1 to last_row
+		dtc_cli_omni = pp_sheet.Cells(r, 1).Value2
+		dtc_cli_omni = Trim(dtc_cli_omni)
+		If dtc_cli_omni = comparison_thing Then
+			rtn = pp_sheet.Cells(r, 4).Value2
+			Exit For
+	Next
+
+	get_dtc_shares_from_ben_rec_template
+
+End Function
+
+
+Public Function get_results()
+
+	Dim results_info as String
+	Dim i as Integer
+
+	If Not found Then
+		results_info = p_client_num & "|" & p_recon_shares & "|" & "Client Not Found"  & "|" & "NA" & "|" & "None" & "|" & "None" & "~"
+	Else
+		For i = 0 to 7
+			If p_where_found(i) = "" Then
+				Exit For
+			End If
+
+			results_info = results_info & p_client_num & "|"
+			results_info = results_info & p_recon_shares & "|"
+			results_info = results_info & p_rits_shares(i) & "|"
+			results_info = results_info & do_shares_match(i) & "|"
+			results_info = results_info & p_sheets_found(i) & "|"
+			results_info = results_info & p_rows_found(i) & "|"
+			results_info = results_info & "~"
+		Next
+
+	results_info = VBA.Strings.Left(results_info, Len(results_info) - 1)
+
+	get_results = results_info
+
+End Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

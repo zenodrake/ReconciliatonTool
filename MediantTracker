@@ -1,0 +1,124 @@
+//MediantTracker
+
+
+Option Explicit
+
+
+Private p_template_ws_name as String
+Private p_company_idx as Integer
+Private p_companies(150) as MediantCompany
+Private p_files_to_check() as String
+Private p_files_are_chosen as Boolean
+Private p_path_to_check as String
+Private p_date_to_check as String
+Private p_recon_wb as Workbook
+Private p_row_idx as Integer
+
+Public Property Let mediant_folder_path(val as String)
+	p_mediant_folder_path = val
+End Property
+
+Public Property Get mediant_folder_path() as String
+	mediant_folder_path = p_mediant_folder_path
+End Property
+
+
+Public Sub check_company(company as MediantCompany)
+	company.get_vote_records_from_mediant
+	company.get_vote_records_from_pp
+	company.compare_vote_records
+
+	With p_recon_wb.Sheets(p_template_ws_name)
+		.Cells(p_company_idx + 1, 1).Value2 = company.company_name
+		.Cells(p_company_idx + 1, 2).Value2 = company.mediant_file_path
+		.Cells(p_company_idx + 1, 3).Value2 = company.status		
+	End With
+End Sub
+
+
+Public Sub add_company(company as MediantCompany)
+	Set p_companies(p_company_idx) = company
+	p_company_idx = p_company_idx + 1
+End Sub
+
+
+Private Function extract_company_name_from_path(path_name as String)
+	Dim idk as Variant
+	Dim company_name as String
+
+	idk = VBA.Strings.Split(path_name, "\")
+	company_name = idk(UBound(idk))
+	company_name = VBA.Strings.Left(company_name, Len(company_name) - 5)
+
+	extract_company_name_from_path = company_name
+End Function
+
+
+Public Sub check_companies()
+	Dim fso as FileSystemObject
+	Dim mediant_folder as Variant
+	Dim mediant_file_path as String
+	Dim company as MediantCompany
+	Dim i as Integer
+
+	Me.prompt_for_files_to_check
+
+	If p_files_are_chosen Then
+		For i = 0 to Ubound(p_files_to_check)
+			Set company = New MediantCompany
+
+			mediant_file_path = p_files_to_check(i)
+			company.mediant_file_path = mediant_file_path
+			company.company_name = extract_company_name_from_path(mediant_file_path)
+			Me.add_company company
+			Me.check_company company
+		Next
+	End If	
+End Sub
+
+
+Private Sub Class_Initialize()
+	p_files_are_chosen = False
+	p_template_ws_name = "Mediant Check"
+	p_company_idx = 0
+	Set p_recon_wb = Workbooks("recon_helper")
+End Sub
+
+
+Public Sub prompt_for_folder_to_check()
+	With Application.FileDialog(msoFileDialogFilePicker)
+		.AllowMultiSelect = True
+		.Show
+
+		If .SelectedItems.count > 0 Then
+			p_path_to_check = .SelectedItems(1)
+		Else
+			p_path_to_check = "None"
+		End If
+	End With
+End Sub
+
+
+Public Sub prompt_for_files_to_check()
+	Dim i as Integer
+	Dim idk as Variant
+
+	With Application.FileDialog(msoFileDialogFilePicker)
+		.AllowMultiSelect = True
+		.Show
+
+		If .SelectedItems.count > 0 Then
+			p_files_are_chosen = True
+			ReDim p_files_to_check(.SelectedItems.count - 1)
+
+			i = 0
+			For Each idk in .SelectedItems
+				p_files_to_check(i) = idk
+				i = i + 1
+			Next
+		Else
+		
+		End If
+	End With
+	
+End Sub

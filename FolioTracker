@@ -1,0 +1,174 @@
+//FolioTracker
+
+Option Explicit
+
+Private p_companies(90) as FolioCompany
+Private p_company_idx as Integer
+Private p_foilo_wb as Workbook
+Private p_template_ws as Worksheet
+Private p_folio_wb_name as String
+Private p_template_ws_name as String
+
+Public Property Get Session() as Object
+	Set Session = GetObject("RIBM")
+End Property
+
+
+Public Property Get num_companies() as Integer
+	num_companies = p_company_idx
+End Property
+
+
+Public Sub set_defaults(wb_name as string)
+	p_folio_wb_name = wb_name
+	Set p_folio_wb = Workbooks(p_folio_wb_name)
+	Set p_template_ws = p_folio_wb.Sheets(p_template_ws_name)
+End Sub
+
+
+Private Sub Class_Initialize()
+	p_template_ws_name = "Folio Template"
+	p_company_idx = 0
+End Sub
+
+
+Public Sub add_company(company as FolioCompany)
+	Set p_companies(p_company_idx) = company
+	p_company_idx = p_company_idx + 1
+End Sub
+
+
+Sub check_companies()
+
+	Dim row_ as Integer
+	Dim company_name as String
+	Dim file_type as String
+	Dim job_num as String
+	Dim cusip as String
+	Dim voted_shares as Double
+	Dim nzz as String
+	Dim folio_file_path as String
+
+	Dim company as FolioCompany
+	Dim folio_company as FolioCompany
+	Dim folio_file as Variant
+
+	row_ = 2
+
+	With p_template_ws
+
+		company_name = .Cells(row_, 1).Value2
+		file_type = .Cells(row_, 2).Value2
+		job_num = .Cells(row_, 3).Value2
+		cusip = .Cells(row_, 4).Value2
+		If Trim(.Cells(row_, 5).Value2) = "" Then
+			voted_shares = 0
+		Else
+			voted_shares = .Cells(row_, 5).Value2
+		End If
+		nzz = .Cells(row_, 6).Value2
+
+		Do While company_name <> ""
+			Set company = New FolioCompany
+			company.set_info company_name, voted_shares, file_type, job_num, cusip, nzz
+			company.status = "not checked"
+
+			folio_file_path = get_folio_file_path(company.company_name)
+
+			If file_type = "Folio" Then
+				company.get_vote_records_from_pp
+
+				If folio_file_path = "Not Found" Then
+					.Cells(row_, 8).Value2 = folio_file_path
+				ElseIf folio_file_path = "Multiple"
+					.Cells(row_, 8).Value2 = folio_file_path
+				Else
+					company.folio_file_path = folio_file_path
+					.Cells(row_, 8).Value2 = folio_file_path
+					company.get_vote_records_from_folio
+					company.compare_vote_records
+					.Cells(row_, 7).Value2 = company.status
+				End If
+			Else
+				If folio_file_path = "Not Found" Then
+					company.status = "Approved"
+					.Cells(row_, 7).Value2 = "Approved"
+				Else
+					.Cells(row_, 7).Value2 = "File Found"
+					.Cells(row_, 8).Value2 = folio_file_path
+				End If
+			End If
+
+			Me.add_company company
+
+			row_ = row_ + 1
+			company_name = .Cells(row_, 1).Value2
+			file_type = .Cells(row_, 2).Value2
+			job_num = .Cells(row_, 3).Value2
+			cusip = .Cells(row_, 4).Value2
+			If Trim(.Cells(row_, 5).Value2) = "" Then
+				voted_shares = 0
+			Else
+				voted_shares = .Cells(row_, 5).Value2
+			End If
+			nzz = .Cells(row_, 6).Value2
+		Loop
+
+	End With
+
+End Sub
+
+
+Public Function get_folio_file_path(company_name as String) as String
+
+	Dim fso as FileSystemObject
+	Dim company_folder as Variant
+	Dim base_path as String
+	Dim search_path as String
+	Dim rtn as String
+	Dim file as Variant
+
+	rtn = "Not Found"
+
+	base_path = "r:\2021 Jobs\"
+	search_path = base_path & company_name & "\Manual Votes"
+	Set fso = New FileSystemObject
+
+	If fso.FolderExists(search_path) Then
+		Set company_folder = fso.GetFolder(search_path)
+
+		For Each file in company_folder.Files
+			If InStr(1, UCase(file.Name), "FOLIO") > 0 Then
+				rtn = file.Path
+				Exit For
+			End If
+		Next
+
+	Else
+		rtn = "Multiple"
+
+		'Dim folder_count as Integer
+		'Dim fldr as Variant
+		'Dim short_fldr_name as String
+		'Dim short_comp_name as String
+
+		'folder_count = 0
+		'Set company_folder = fso.GetFolder(base_path)
+		'For Each fldr in company_folder.SubFolders
+		'	short_fldr_name = UCase(VBA.Strings.Left(fldr.name, 10))
+		'	short_comp_name = Ucase(VBA.Strings.Left(company_name, 10))
+		'	If short_fldr_name = short_comp_name Then
+		'		folder_count = folder_count + 1
+		'	End If
+		'
+		'	If folder_count > 1 Then
+		'		rtn = "Multiple"
+		'		Exit For
+		'	End If
+		'Next
+		
+	End If
+
+	get_folio_file_path = rtn
+
+End Function

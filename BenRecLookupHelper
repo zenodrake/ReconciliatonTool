@@ -1,0 +1,643 @@
+//BenRecLookupHelper
+
+
+Option explicit
+
+Private p_recon_wb as Workbook
+Private p_recon_ws as Worksheet
+Private p_recon_wb_path as String
+Private p_sheets_to_look_in(8) as String
+Private p_recon_wb_name as String
+Private p_recon_ws_name as String
+Private p_rits_sheets as Sheets
+Private p_rits_wb as Workbook
+Private p_recon_share_col as Integer
+Private p_proceed_with_save as Boolean
+Private p_new_workbook as Workbook
+Private p_new_workbook_save_path as String
+Private p_base_path as String
+Private p_max_search_row as integer
+Private p_is_saved as Boolean
+
+
+Property Get get_new_wb_save_path() as String
+	get_new_wb_save_path = p_new_workbook_save_path
+End Property
+
+
+Property Get is_saved() as Boolean
+	is_saved = p_is_saved
+End Property
+
+
+Property Let is_saved(val as Boolean)
+	p_is_saved = val
+End Property
+
+
+Property Get base_path() as String
+	base_path = p_base_path
+End Property
+
+
+Property Let base_path(val as String)
+	p_base_path = val
+End Property
+
+
+Property Get max_search_row() as Integer
+	max_search_row = p_max_search_row
+End Property
+
+
+Property Get Session() as Object
+	Set Session = GetObject("RIBM")
+End Property
+
+
+Property Get recon_share_col() as Integer
+	recon_share_col = p_recon_share_col
+End Property
+
+
+Property Get recon_wb_name() as String
+	recon_wb_name = p_recon_wb_name
+End Property
+
+
+Property Get rits_sheets() as Sheets
+	Set rits_sheets = p_rits_sheets
+End Property
+
+
+Property Set rist_sheets(ws as Sheets)
+	Set p_rits_sheets = ws
+End Property
+
+
+Property Get rits_wb() as Workbook
+	Set rits_wb = p_rits_wb
+End Property
+
+
+Property Set rits_wb(wb as Workbook)
+	Set p_rits_wb = wb
+	Set p_rits_sheets = wb.Sheets(p_sheets_to_look_in)
+End Property
+
+
+Property Get recon_wb() as Workbook
+	Set recon_wb = p_recon_wb
+End Property
+
+
+Property Set recon_wb(wb as Workbook)
+	Set p_recon_wb = wb
+	p_recon_wb_name = wb.Name
+End Property
+
+
+Property Get recon_ws() as Worksheet
+	Set recon_ws = p_recon_ws
+End Property
+
+
+Property Set recon_ws(ws as Worksheet)
+	Set p_recon_ws = ws
+	p_recon_ws_name = ws.Name
+End Property
+
+
+private Sub Class_Initialize()
+	p_max_search_row = 2001
+	p_recon_share_col = 13
+	p_is_saved = False
+
+	p_sheets_to_look_in(0) = "Data Entry"
+	p_sheets_to_look_in(1) = "F8 Spreadsheet"
+	p_sheets_to_look_in(2) = "Omni Overrides"
+	p_sheets_to_look_in(3) = "No Overrides"
+	p_sheets_to_look_in(4) = "System Omnis"
+	p_sheets_to_look_in(5) = "Client Update Template"
+	p_sheets_to_look_in(6) = "Templates"
+	p_sheets_to_look_in(7) = "2039"
+	p_sheets_to_look_in(8) = "0901 Update"
+End Sub
+
+
+Sub clear_filters()
+	Dim ben_rec_wb as Workbook
+	Set ben_ret_wb = Workboks(p_recon_wb_name)
+
+	ben_rec_wb.Sheets(p_recon_ws_name).range("A1:AG5000").AutoFilter Field:=7
+	ben_rec_wb.Sheets(p_recon_ws_name).range("A1:AG5000").AutoFilter Field:=13
+	ben_rec_wb.Sheets(p_recon_ws_name).range("A1:AG5000").AutoFilter Field:=14
+
+End Sub
+
+
+Sub copy_from_omni_template(rits_wb as Workbook)
+
+	Dim rec_wb as Workbook
+	Dim last_row as Integer
+	Dim copy_range_text as String
+	Dim dest_range_text as string
+	Dim copy_range as range
+	Dim dest_range as range
+	Dim rits_ws as Worksheet
+
+	Set recon_wb = Workbooks(p_recon_wb_name)
+	Set rits_ws = rits_wb.Sheets("1 Screen Extract")
+
+	last_row = rits_wb.Sheets("1 Screen Extract").range("A:A").End(xlDown).Row
+	copy_range_text = "A2:AE" & last_row
+	dest_range_text = copy_range_text
+
+	Set copy_range = rits_ws.range(copy_range_text)
+	Set dest_raneg = recon_wb.Sheets("1 Screen Extract).range(dest_range_text)
+
+	copy_range.Copy Destination:=dest_range
+	
+End Sub
+
+
+Sub copy_to_new_workbook(recon_type as String)
+
+	Dim nb as Workbook
+	Dim rec_wb as Workbook
+	Dim last_row as Integer
+	Dim copy_range_text as String
+	Dim dest_range_text as string
+	Dim copy_range as range
+	Dim dest_range as range
+
+	Set rec_wb = Workbooks(p_recon_wb_name)
+
+	If recon_type = "Ben Rec" or recon_type = "Reallocation" Then
+		Call clear_filters
+
+		last_row = rec_wb.Sheets(p_recon_ws_name).range("K:K").End(xlDown).Row
+
+		copy_range_text = "A1:AG" & last_row
+		dest_range_text = "A1:AG" & last_row
+
+		Set copy_range = p_recon_ws.range(copy_range_text)
+		Set nb = Workbooks.Add()
+		Set dest_range = nb.Sheets("Sheet1").range(dest_range_text)
+
+		copy_range.Copy Destination:=dest_range
+
+		copy_range_text = "M:M"
+		dest_range_text = "M:M"
+
+		Set copy_range = nb.Sheets("Sheet1").range(copy_range_text)
+		Set dest_range = nb.Sheets("Sheet1").range(copy_range_text)
+		copy_range.Copy
+		dest_range.PasteSpecial xlPasteValues
+
+		columns("C:D").EntireColumn.AutoFit
+
+	ElseIf recon_type = "Reg Rec" Then
+		Dim save_ws_name as String
+		save_ws_name = "Reg Rec Sheet"
+
+		copy_range_text = "A1:F30"
+		dest_range_text = "A1:F30"
+
+		Set copy_range = p_recon_ws.range(copy_range_text)
+		Set nb = Workbooks.Add()
+		Set dest_range = nb.Sheets("Sheet1").range(dest_range_text)
+
+		copy_range.Copy Destination:=dest_range
+		dest_range.PasteSpecial xlPasteValues
+
+		columns("A:F").EntireColumn.AutoFit
+
+	ElseIf recon_type = "CDS" Then
+		Exit Sub
+	End If
+
+	set p_new_workbook = nb
+
+End Sub
+
+
+Sub save_new_to_network(recon_type as String)
+
+	Dim company_name as String
+	Dim meet_date as String
+	Dim save_path as String
+	Dim class_num as String
+	Dim fso as FileSystemObject
+
+	Set fso = New FileSystemObject
+
+	Call copy_to_new_workbook(recon_type)
+
+	company_name = get_company_name()
+	meet_date = format_meet_date(get_meet_date())
+
+	Call create_network_folder(company_name, meet_date)
+
+	If p_proceed_with_save Then
+
+		If recon_type = "Ben Rec" Then
+			class_num = VBA.Strings.Right(p_recon_ws.Cells(2, 2).Value, 3)
+			save_path = p_new_workbook_save_path & "\Class " & class_num
+		ElseIf recon_type = "Reallocation" Then
+			class_num = VBA.Strings.Right(p_recon_ws.Cells(2, 2).Value, 3)
+			save_path = p_new_workbook_save_path & "\Class " & class_num & "_reallocation"
+		Else
+			save_path = p_new_workbook_save_path & "\" & p_new_workbook.Name
+		End If
+
+		save_path = generate_file_name(save_path)
+
+		p_new_workbook.SaveAs save_path
+		MsgBox p_new_workbook.Name & " saved as " & save_path, vbOkOnly
+		p_is_saved = True
+		p_new_workbook_save_path = save_path
+		p_new_workbook.Close
+
+	End If
+
+
+End Sub
+
+
+Function generate_file_name(file_name as String)
+
+	Dim fso as FileSystemObject
+	Dim new_file_name as String
+	Dim suffix as String
+	Dim suffix_int as Integer
+
+	suffix = " version "
+	suffix_int = 2
+	new_file_name = file_name & ".xlsx"
+
+	Set fso = New FileSystemObject
+
+	Do While fso.FileExists(new_file_name)
+		new_file_name = file_name & suffix & suffix_int & ".xlsx"
+		suffix_int = suffix_int + 1
+	Loop
+
+	generate_file_name = new_file_name
+
+End Function
+
+
+Function columns_to_search(sheet_name as String)
+	Dim columns(5) as Integer
+	
+	If sheet_name = "Data Entry" Then
+		columns(0) = 2
+	ElseIf sheet_name = "F8 Spreadsheet"
+		columns(0) = 3
+	ElseIf sheet_name = "Omni Overrides"
+		columns(0) = 8
+	ElseIf	sheet_name = "No Overrides"
+		columns(0) = 7
+	ElseIf sheet_name = "System Omnis"
+		columns(0) = 7
+	ElseIf sheet_name = "Client Update Template"
+		columns(0) = 1
+		columns(1) = 7
+	ElseIf sheet_name = "Templates"
+		columns(0) = 1
+		columns(1) = 6
+	ElseIf sheet_name = "0901 Update"
+		columns(0) = 2
+	ElseIf sheet_name = "2039"
+		columns(0) = 2
+	EndIf
+
+	columns_to_search = columns	
+End Function
+
+
+Function columns_to_search_for_3xx(sheet_name as String)
+	'' leaving out the particulars because it is unnecessary
+	'' this function's structure is identical to columns_to_search
+	Dim columns(5) as Integer
+	
+	columns_to_search_for_3xx = columns
+End Function
+
+
+Function share_col_lookup(sheet_name as String)
+	Dim de_share_col as Integer
+	Dim f8_share_col as Integer
+	Dim omni_share_col as Integer
+	Dim noover_share_col as Integer
+	Dim system_share_col as Integer
+	Dim client_share_col as Integer
+	Dim template_share_col as Integer
+	Dim oh901_update_share_col as Integer
+	Dim twenty39_share_col as Integer
+	
+	de_share_col = 4
+	f8_share_col = 5
+	omni_share_col = 9
+	noover_share_col = 8
+	system_share_col = 8
+	client_share_col = 2
+	template_share_col = 2
+	twenty39_share_col = 3
+	oh901_update_share_col = 3
+	
+	If sheet_name = "Data Entry" Then
+		share_col_lookup = de_share_col
+	ElseIf sheet_name = "F8 Spreadsheet"
+		share_col_lookup = f8_share_col
+	ElseIf sheet_name = "Omni Overrides"
+		share_col_lookup = omni_share_col
+	ElseIf	sheet_name = "No Overrides"
+		share_col_lookup = noover_share_col
+	ElseIf sheet_name = "System Omnis"
+		share_col_lookup = system_share_col
+	ElseIf sheet_name = "Client Update Template"
+		share_col_lookup = client_share_col
+	ElseIf sheet_name = "Templates"
+		share_col_lookup = template_share_col
+	ElseIf sheet_name = "0901 Update"
+		share_col_lookup = oh901_update_share_col
+	ElseIf sheet_name = "2039"
+		share_col_lookup = twenty39_share_col
+	EndIf
+
+End Function
+
+
+Function build_to_from_line(from_client as String, dtc as String, to_client as String)
+	build_to_from_line = dtc & "-" & from_client & "-" & to_client
+End Function
+
+
+Function get_dtc_shares_from_pp(to_client as String, to_from_line as String)
+
+	Dim a as Integer
+	Dim pp_line as String
+	Dim dtc_shares_str as String
+	Dim dtc_shares as Double
+	Dim cpt_shares_str as String
+	Dim cpt_shares as Double
+
+	With Session
+		.MoveCursor 7, 11
+		.TransmitANSI to_client
+
+		.MoveCursor 7, 28
+		.TransmitANSI "    "
+		.TransmitTerminalKey rcIBMEnterKey
+
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		a = 11
+		Do While .GetDisplayText(22, 2, 17) <> "*** LAST PAGE ***"
+			pp_line = .GetDisplayTex(a, 2, 12)
+			pp_line = Trim(pp_line)
+
+			If pp_line = to_from_line Then
+				dtc_shares_str = .GetDisplayText(a, 17, 12)
+				cpt_shares_str = .GetDisplayText(a, 33, 12)
+				dtc_shares_str = Trim(dtc_shares_str)
+				cpt_shares_str = Trim(cpt_shares_str)
+				Exit Do
+			End If
+
+			a = a + 1
+			If a = 22 Then
+				.TransmitTerminalKey rcIBMPf2Key
+				a = 11
+			End If
+
+			.WaitForEvent rcKbEnabled, "60", "0!, 1, 1
+		Loop
+	End With
+
+	If dtc_shares_str = "" Then
+		dtc_shares = -1
+		cpt_shares = -1
+	Else
+		dtc_shares = CDbl(dtc_shares_str)
+		cpt_shares = CDbl(cpt_shares_str)
+	End If
+
+	get_dtc_shares_from_pp = dtc_shares
+
+End Function
+
+
+Function get_dtc_shares_from_lone_client_clearing_num(clearing_num as String)
+
+	Dim dtc_shares_str as String
+	Dim dtc_shares as Double
+
+	With Session
+		.MoveCursor 7, 11
+		.TransmitANSI "    "
+
+		.MoveCursor 7, 28
+		.TransmitANSI clearing_num
+		.TransmitTerminalKey rcIBMEnterKey
+
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		dtc_shares_str = .GetDisplayText(a, 17, 12)
+		dtc_shares_str = Trim(dtc_shares_str)
+		dtc_shares = CDbl(dtc_shares_str)
+
+	End With
+
+	get_dtc_shares_from_lone_client_clearing_num = dtc_shares
+
+End Function
+
+
+Function only_client_on_clearing_number(client_num as String, clearing_num as String)
+
+	
+	Dim a as Integer
+	Dim pp_line as String
+	Dim dtc_shares_str as String
+	Dim dtc_shares as Double
+	Dim cpt_shares_str as String
+	Dim cpt_shares as Double
+	Dim rtn as Boolean
+
+	rtn = False
+
+	With Session
+		.MoveCursor 7, 11
+		.TransmitANSI "    "
+
+		.MoveCursor 7, 28
+		.TransmitANSI clearing_num
+		.TransmitTerminalKey rcIBMEnterKey
+
+		.WaitForEvent rcKbdEnabled, "60", "0", 1, 1
+
+		a = 11
+		Do While .GetDisplayText(22, 2, 17) <> "*** LAST PAGE ***"
+			pp_line = .GetDisplayTex(a, 2, 12)
+			pp_line = Trim(pp_line)
+
+			If pp_line = "" and a = 12 Then
+				rtn = True
+				Exit Do
+			ElseIf a = 13 Then
+				rtn = False
+				Exit Do
+			End If
+
+			a = a + 1
+			If a = 22 Then
+				.TransmitTerminalKey rcIBMPf2Key
+				a = 11
+			End If
+
+			.WaitForEvent rcKbEnabled, "60", "0!, 1, 1
+		Loop
+	End With
+	
+	only_client_on_clearing_number = rtn
+	
+End Function
+
+
+Function get_company_name()
+
+	Dim c_name as String
+
+	With Session
+		c_name = .GetDisplayText(4, 43, 38)
+		c_name = Trim(c_name)
+	End With
+	
+	c_name = format_company_name(c_name)
+	get_company_name = c_name
+
+End Function
+
+
+Function get_meet_date()
+
+	Dim m_date as String
+
+	With Session
+		m_date = .GetDisplayText(6, 62, 9)
+		m_date = Trim(m_date)
+	End With
+
+	get_meet_date = m_date
+	
+End Function
+
+
+Function format_meet_date(meet_date as String)
+
+	Dim m_date as String
+	
+	m_date = Replace(meet_date, "/", ".")
+
+	format_meet_date = m_date
+	
+End Function
+
+
+Function format_company_name(p_company_name as String)
+
+	Dim m_name as String
+	m_name = Replace(p_company_name, "/", "-")
+	format_company_name = m_name
+
+End Function
+
+
+Function get_network_path(folder_name as String)
+	get_network_path = p_base_path & folder_name
+End Function
+
+
+Sub create_network_folder(company_name as String, meet_date as String)
+
+	Dim folder_name as String
+	Dim folder_path as String
+	Dim fso as FileSystemObject
+	Dim msg_prompt as String
+	Dim user_response as Integer
+
+	Set fso = New FileSystemObject
+
+	folder_name = company_name & " " & meet_date
+	folder_path = get_network_folder_path(folder_name)
+
+	P_new_workbook_save_path = folder_path
+	'msg_prompt = "You are about to create the following folder: " & folder_path & ". Proceed?"
+	'user_response = MsgBox(msg_prompt, vbOKCancel, "Folder Creation")
+	user_response = 1
+
+	If user_response = 1 Then
+		p_proceed_with_save = True
+		If Not fso.FolderExists(folder_path) Then
+			fso.CreateFolder(folder_path)
+		End If
+	Else
+		p_proceed_with_save = False
+	End If
+
+End Sub
+
+
+Public Sub reset_template()
+
+	With p_recon_ws
+		''not typing out everything here, but here is what is done
+		'' remove autofilters
+		'' .Cells.FormatConditions.Delete
+		'' .Cells.ClearContents
+		'' .Cells.ClearFormats
+
+		'' set the values for the header rows
+
+		With .range().Interior
+			.Pattern = xlSolid
+			.PatternColorIndex = xlAutomatic
+			.ThemeColor = 1 ' whatever'
+			.TintAndShade = 0
+			.PatternTintAndShade = 0
+		End With
+
+		.range().AutoFilter
+		
+	End With
+
+	With p_recon_wb.Sheets()
+		.range().ClearContents
+		.range().FormulaR1C1 = "=MID(RC[-1],6,3)"
+	End With
+
+End Sub
+
+
+Sub pullProxyPlus(Optional show_msg as Boolean = True)
+	''not including anything here, but it's similar to get_dtc_shares_from_pp.
+	'' indeed, get_dtc_shares_from_pp was patterned off this.
+
+	If show_msg Then
+		MsgBox("There are no more clients to check")
+	End If
+
+	Call adjust1ScreenTab
+End Sub
+
+
+Sub adjust1ScreenTab()
+	''not really putting anything in here. suffice to say that this procedure adds some columns
+	'' then removes some columns
+	'' then adds conditional formatting. all stuff which could be generated by the record macro feature
+End Sub
+
+

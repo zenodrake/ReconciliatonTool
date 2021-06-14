@@ -1,0 +1,13 @@
+//FolioVoteInfo
+
+
+Option Explicit
+
+Public prop_number as String
+Public for_votes as Double
+Public against_votes as Double
+Public abstain_votes as Double
+Public one_year_votes as Double
+Public two_year_votes as Double
+Public three_year_votes as Double
+Public withhold_votes as Double

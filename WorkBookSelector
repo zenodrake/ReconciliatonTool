@@ -1,0 +1,38 @@
+//WorkBookSelector
+
+Option Explicit
+
+Public is_cancelled as Boolean
+Public rits_wb_name as String
+
+
+Private Sub CancelButton_Click()
+	WorkBookSelector.Hide
+	is_cancelled = True
+End Sub
+
+
+Private Sub ProceedButton_Click()
+	rits_wb_name = SelectionWindow.Value
+	Set ResultsForm.rits_wb = Workbooks(rits_wb_name)
+	WorkBookSelector.Hide
+End Sub
+
+
+Private Sub UserForm_Activate()
+	Dim wb as Workbook
+	SelectionWindow.Clear
+
+	For Each wb in Application.Workbooks
+		SelectionWindow.AddItem (wb.Name)
+	Next
+End Sub
+
+
+Private Sub UserFrom_Initialize()
+	Dim wb as Workbook
+
+	For Each wb in Application.Workbooks
+		SelectionWindow.AddItem (wb.Name)
+	Next
+End Sub

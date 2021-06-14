@@ -1,0 +1,366 @@
+//ClientTracker
+
+
+Option Explicit
+
+Private p_num_clients as Integer
+Private p_num_approved as Integer
+Private p_num_declined as Integer
+Private p_client_idx as Integer
+Private p_mismatched_clients() as Integer
+Private p_client_records() as ClientRecord
+
+Property Get client_index() as Integer
+	client_index = p_client_idx
+End Property
+
+Property Let client_index(val as Integer)
+	p_client_idx = val
+End Property
+
+Property Get num_clients() as Integer
+	num_clients = p_num_clients
+End Property
+
+Property Get num_declined() as Integer
+	num_declined = p_num_declined
+End Property
+
+Property Let num_declined(val as Integer)
+	p_num_declined = val
+End Property
+
+Property Get num_approved() as Integer
+	num_approved = p_num_approved
+End Property
+
+Property Let num_approved(val as Integer)
+	p_num_approved = val
+End Property
+
+
+Public Function are_all_clients_approved() as Boolean
+
+	Dim client as ClientRecord
+	Dim all_approved as Boolean
+	Dim i as Integer
+
+	all_approved = True
+
+	For i = 0 to p_num_clients - 1
+		Set client = p_client_records(i)
+		If client.status <> "approved" Then
+			all_approved = False
+			Exit For
+		End If
+	Next
+
+	are_all_clients_approved = all_approved
+	
+End Function
+
+
+Public Sub add_client(ByRef client as ClientRecord)
+	Set p_client_records(p_num_clients) = client
+	p_num_clients = p_num_clients + 1
+
+	If p_num_clients >= 300 Then
+		Call resize_client_array
+	End If
+End Sub
+
+
+Private Sub resize_client_array()
+	Dim abc() as ClientRecord
+	Dim i as Integer
+
+	abc = p_client_records
+	ReDim p_client_records(p_num_clients + p_num_clients)
+
+	For i = 0 to Ubound(abc)
+		Set p_client_records(i) = abc(i)
+	Next
+End Sub
+
+
+Private Sub Class_Initialize()
+	p_num_clients = 0
+	p_num_approved = 0
+	p_num_declined = 0
+	p_cliend_idx = 0
+	ReDim p_client_records(300)
+	ReDim p_mismatched_clients(300)
+	Call init_mismatched_clients
+End Sub
+
+
+Private Sub init_mismatched_clients()
+	Dim i as Integer
+	For i = 0 to Ubound(p_mismatched_clients)
+		p_mismatched_clients(i) = -1
+	Next
+End Sub
+
+
+Public Sub clear_clients()
+	ReDim p_client_records(300)
+	ReDim p_mismatched_clients(300)
+	p_num_clients = 0
+	p_client_idx = 0
+	Call init_mismatched_client
+	
+End Sub
+
+
+Public Sub lookup_client(idx as Integer)
+	Dim client as ClientRecord
+	p_client_idx = idx
+
+	Set client = p_client_records(idx)
+	Call client_lookup(client)
+	p_client_idx = p_client_idx + 1
+End Sub
+
+
+Public Sub lookup_clients(ByRef clb as MSForms.ListBox)
+	Dim client as ClientRecord
+	Dim i as Integer
+	Dim k as Integer
+
+	k = 0
+
+	For i = 0 to p_num_clients
+		Set clients = p_client_records(i)
+
+		If client is Nothing Then
+			Exit For
+		End If
+
+		If client.status = "approved" Or client.status = "declined" Then
+		Else
+			Call client_lookup(client)
+
+			If client.matches_rits Then
+				client.approve_self
+				Me.increment_approved
+				clb.List(i, 1) = "Approved"
+			Else
+				client.decline_self
+				Me.increment_decliend
+				p_mismatched_clients(k) = i
+				k = k + 1
+				clb.List(i, 1) = "Declined"
+			End If
+		End If
+	Next
+End Sub
+
+
+Sub client_lookup(ByRef client as ClientRecord)
+	Dim found_range as range
+	Dim instances_found as Integer
+	Dim rits_votable_shares as Double
+	Dim max_search_row as Double
+
+	Dim found as Boolean
+	Dim found_on_data_entry as Boolean
+	Dim last_found_row as Integer
+	Dim last_found_amount as Double
+	Dim lh as BenRecLookupHelper
+
+	Dim where_found_sheet_idx as Integer
+	Dim sht as Variant
+	Dim search_columns as Variant
+	Dim rits_share_col as Integer
+	Dim rows_found_on as String
+	Dim search_col as Variant
+	Dim row_ as Integer
+	Dim cell_ as Variant
+	Dim share_cell as Variant
+	Dim recon_shares as Double
+	Dim where_found_info as String
+	Dim dtc_shares as Double
+	Dim combined_shares as Double
+	Dim what_to_search_for as String
+
+	where_found_sheet_idx = 0
+	found = False
+	last_found_row = 0
+	last_found_amount = 0
+	found_on_data_entry = False
+	recon_shares = client.recon_shares
+
+	Set lh = ResultsForm.helper
+	max_search_row = lh.max_search_row
+
+	For Each sht in lh.rits_sheets
+		instances_found = 0
+
+		If client.client_num = "3XX" Then
+			search_columns = lh.columns_to_search_for_3xx(sht.Name)
+			what_to_search_for = "REDACTED"
+		Else
+			search_columns = lh.columns_to_search(sht.Name)
+			what_to_search_for = client.client_num
+		End If
+
+		rits_share_col = lh.share-col_lookup(sht.Name)
+		rits_votable_shares = 0
+		rows_found_on = ""
+
+		For Each search_col in search_columns
+			found = False
+
+			If search_col = 0 Then
+				Exit For
+			End If
+
+			row_ = 1
+
+			Do While row_ < max_search_row
+				Set cell_ = sht.Cells(row_, search_col)
+
+				If InStr(1, cell_.Value2, what_to_search_for, vbTextCompare) > 0 And cell_.Value2 <> "" Then
+					instances_found = instances_found + 1
+					client.instances_found = instances_found
+					found = True
+					client.found = found
+
+					Set share_cell = sht.Cells(row_, rits_share_col)
+					rows_found_on = rows_found_on & "," & row_
+
+					rits_votable_shares = rits_votable_shares + share_cell.Value2
+
+					If sht.Name = "Data Entry" Then
+						found_on_data_entry = True
+						If row_ > last_found_row Then
+							last_found_row = row_
+							last_found_amount = share_cell.Value2
+							rits_votable_shares = share_cell.Value2
+						End If
+					End If
+
+					
+				End If
+
+				row_ = row_ + 1
+				
+			Loop
+			
+		Next search_col
+
+		If instances_found > 0 Then
+			rows_found_on = Right(rows_found_on, Len(rows_found_on) - 1)
+
+			If sht.Name = "Data Entry" and instances_found > 1 Then
+				Dim idx as Integer
+				Dim left_string as String
+				Dim right_string as String
+
+				idx = InStr(1, rows_found_on, last_found_row, vbTextCompare)
+				left_string = VBA.Strings.Left(rows_found_on, idx - 1)
+				left_string = left_string & "("
+
+				right_string = Right(rows_found_on, Len(rows_found_on) - idx + 1)
+				right_string = right_string & ")"
+
+				rows_found_on = left_string & right_string
+			End If
+
+			where_found_info = sht.Name & "|" & rits_votable_shares & "|" & rows_found_on
+
+			client.set_where where_found_sheet_idx, where_found_info
+			where_found_sheet_idx = where_found_sheet_idx + 1
+			
+		End If
+
+	Next sht
+
+	If Not client.found And client.recon_shares > 0 Then
+		If lh.only_client_on_clearing_number(client.client_num, client.dtc_num) Then
+			dtc_shares = lh.get_dtc_shares_from_lone_client_clearing_num(client.dtc_num)
+			combined_shares = rits_votable_shares + dtc_shares
+
+			If combined_shares = client.recon_shares Then
+				client.found = True
+				rits_votable_shares = combined_shares
+				rows_found_on = rows_found_on & " (PP)"
+				client.sole_in_clearing = True
+				client.set_where 0, "PP|" & combined_shares & "|-1"
+			End If
+		End If
+	End If
+
+	Call client.compare_shares
+
+End Sub
+
+
+Sub display_result(ByRef lb as MSForms.ListBox, ByVal client_index as Integer)
+	Dim client as ClientRecord
+	Dim results_info as Variant
+	Dim results_line as Variant
+	Dim line as Variant
+	Dim bit as Variant
+	Dim i as Integer
+	Dim c as Integer
+
+	With lb
+		Set client = p_client_records(client_index)
+
+		results_info = client.get_results()
+		results_info = Split(results_info, "~")
+
+		i = lb.ListCount
+		For Each line in results_info
+			.AddItem ("")
+			results_line = Split(line, "|")
+
+			c = 0
+			For Each bit in results_line
+				.List(i, c) = bit
+				c = c + 1
+			Next
+			i = i + 1
+		Next
+
+	End With
+	
+End Sub
+
+
+Public Sub display_mismatches(ByRef lb as MSForms.ListBox)
+	Dim client as ClientRecord
+	Dim row_idx as Integer
+	Dim j as Variant
+
+	With lb
+		For Each j in p_mismatched_clients
+			If j = -1 Then
+				Exit For
+			End If
+			Call Me.display_result(lb, j)
+		Next
+		lb.AddItem ("End of Client List")
+	End With
+End Sub
+
+
+Public Function get_client(i as Integer) as ClientRecord
+	Set get_client = p_client_records(i)
+End Function
+
+
+Public Sub add_client_to_client_listbox(lb as MSForm.ListBox, client as ClientRecord)
+	lb.AddItem (client.client_num)
+End Sub
+
+
+Public Sub increment_approved()
+	p_num_approved = p_num_approved + 1
+End Sub
+
+
+Public Sub increment_declined()
+	p_num_declined = p_num_declined + 1
+End Sub
